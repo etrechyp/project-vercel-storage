@@ -1,20 +1,25 @@
-import { put } from "@vercel/blob";
-import { NextResponse } from "next/server";
+import { put, del } from "@vercel/blob";
+import multer from "multer";
+import sharp from "sharp";
+
+const upload = multer();
+
+export const config = {
+    api: {
+        bodyParser: false,
+    },
+};
 
 const saveToBlob = async (file) => {
-    const form = await request.formData();
-    const file = form.get("file");
-    const blob = await put(file.name, file, { access: "public" });
-
-    return NextResponse.json(blob);
+    const { url } = await put(file.originalname, file.buffer, {
+        access: "public",
+    });
+    return url;
 };
 
-const getToBlob = async () => {
-    console.log("get to blob");
-};
-
-const deleteToBlob = async () => {
-    console.log("deleted to blob");
+const removeFromBlob = async (url) => {
+    const resp = await del(url);
+    return resp;
 };
 
 export default async function handler(req, res) {
@@ -22,23 +27,40 @@ export default async function handler(req, res) {
 
     try {
         switch (method) {
-            case "GET":
-                await getToBlob();
-                return res.status(200).json({
-                    message: "file",
-                });
-
             case "POST":
-                console.log(res.body);
-                await saveToBlob();
-                return res.status(201).json({
-                    message: "file created succsessfuly",
+                upload.single("file")(req, res, async (err) => {
+                    if (err) {
+                        console.error("Multer error:", err);
+                        return res.status(400).json({
+                            message: "Error uploading file",
+                            error: err.message,
+                        });
+                    }
+
+                    const file = req.file;
+
+                    const webpBuffer = await sharp(file.buffer)
+                        .webp()
+                        .toBuffer();
+                    const webpFile = {
+                        originalname: `${file.originalname.split(".")[0]}.webp`,
+                        buffer: webpBuffer,
+                    };
+
+                    const resp = await saveToBlob(webpFile);
+
+                    return res.status(201).json({
+                        message: "file created successfully",
+                        file: resp,
+                    });
                 });
+                return;
 
             case "DELETE":
-                await deleteToBlob();
+                const respDelete = await removeFromBlob(query.url);
                 return res.status(204).json({
-                    message: "file deleted successfuly",
+                    message: "file deleted successfully",
+                    data: respDelete,
                 });
 
             default:
